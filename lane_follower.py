@@ -17,21 +17,13 @@ pid.SetPoint = 0
 pid.setSampleTime(1)
 
 def lane(prev_h):
-    frame = cv2.imread("frame.jpg")
+    frame = cv2.imread("frame.jpg", cv2.IMREAD_GRAYSCALE)
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lower_blue = np.array([0, 100, 40])
-    upper_blue = np.array([175, 300, 175])
-    mask = cv2.inRange(hsv, lower_blue, upper_blue) # filter out wanted colours only (lanes)
-    """------------------------------------------"""
-    cv2.imshow("hsv", hsv)
-    cv2.waitKey(0)
-    cv2.imshow("mask", mask)
-    cv2.waitKey(0)
-    """------------------------------------------"""
-    cropped_edges, line_segments, line_image = line_segs(mask, frame)
-    cv2.imshow("cropped_edges", cropped_edges)
-    cv2.waitKey(0)
+    # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # lower_blue = np.array([0, 100, 40])
+    # upper_blue = np.array([175, 300, 175])
+    # mask = cv2.inRange(hsv, lower_blue, upper_blue) # filter out wanted colours only (lanes)
+    cropped_edges, line_segments, line_image = line_segs(frame)
     lane_lines, lane_image = get_lanes(line_segments, frame)
     if lane_lines is None:
         print("Lane_lines: None")
@@ -59,13 +51,14 @@ def lane(prev_h):
 
     return angle
 
-def line_segs(mask, frame):    # Use mask to find and return line segments
-    edges = cv2.Canny(mask, 200, 400, L2gradient =True)
+def line_segs(frame):    # Use mask to find and return line segments
+    edges = cv2.Canny(frame, 200, 400, L2gradient =True)
     cropped_edges= focus(edges, np.zeros_like(edges))
     """-----------------------------------------------------------------"""
-    # cv2.imshow("edges", edges)
-    # cv2.imshow("cropped_edges", cropped_edges)
-    # cv2.waitKey(0)
+    cv2.imshow("frame", frame)
+    cv2.imshow("edges", edges)
+    cv2.imshow("cropped_edges", cropped_edges)
+    cv2.waitKey(0)
     """
     -----------------------------------------------------------------
     Parameters for extracting line segments
