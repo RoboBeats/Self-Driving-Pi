@@ -8,41 +8,31 @@ from picamera2 import Picamera2
 import PID
 
 # Initialise PID
-P = -0.225
-I = 0.35
-D = 0.2
+P = 0.25
+I = 0.07
+D = 0.05
 
 pid = PID.PID(P, I, D)
 pid.SetPoint = 0
 pid.setSampleTime(1)
 
-def lane(prev_h):
+def lane_det(prev_h, is_direct):
     frame = cv2.imread("frame.jpg", cv2.IMREAD_GRAYSCALE)
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
     # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     # lower_blue = np.array([0, 100, 40])
     # upper_blue = np.array([175, 300, 175])
     # mask = cv2.inRange(hsv, lower_blue, upper_blue) # filter out wanted colours only (lanes)
-    cropped_edges, line_segments, line_image = line_segs(frame)
-    lane_lines, lane_image = get_lanes(line_segments, frame)
-    if lane_lines is None:
-        print("Lane_lines: None")
-        return 0
-    """-----------------------------------------------------------------------------------------
-        Display hsv, mask, cropped edges and line segments, and lanes"""
+    cropped_edges, line_segments = line_segs(frame, is_direct)
+    if type(line_segments) != type(np.array([])):
+        print("Line_segs: None")
+        return prev_h
 
-    cv2.imshow("hsv", hsv)
-    cv2.waitKey(0)
-    cv2.imshow("mask", mask)
-    cv2.waitKey(0)
-    cv2.imshow("cropped_edges", cropped_edges)
-    cv2.waitKey(0)
-    cv2.imshow("line_image", line_image)
-    cv2.waitKey(0)
-    cv2.imshow("lane lines", lane_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    """____________________________________________________________________________"""
+    line_segments = line_segments[:4]
+    lane_lines, lane_image = get_lanes(line_segments, frame)
+    if type(lane_lines) != type([]):
+        print("Lane_lines: None")
+        return prev_h
 
     angle = heading(lane_lines, frame, lane_image, prev_h)
 
@@ -51,14 +41,15 @@ def lane(prev_h):
 
     return angle
 
-def line_segs(frame):    # Use mask to find and return line segments
-    edges = cv2.Canny(frame, 200, 400, L2gradient =True)
+def line_segs(frame, is_direct):    # Use mask to find and return line segments
+    edges = cv2.Canny(frame, 190, 400, L2gradient =True)
     cropped_edges= focus(edges, np.zeros_like(edges))
     """-----------------------------------------------------------------"""
-    cv2.imshow("frame", frame)
-    cv2.imshow("edges", edges)
-    cv2.imshow("cropped_edges", cropped_edges)
-    cv2.waitKey(0)
+    if is_direct:
+        cv2.imshow("frame", frame)
+        cv2.imshow("edges", edges)
+        cv2.imshow("cropped_edges", cropped_edges)
+        cv2.waitKey(0)
     """
     -----------------------------------------------------------------
     Parameters for extracting line segments
@@ -72,20 +63,13 @@ def line_segs(frame):    # Use mask to find and return line segments
     line_segments = cv2.HoughLinesP(cropped_edges, rho, angle, min_threshold, 
         np.array([]), minLineLength=minLineLength, maxLineGap=maxLineGap)
     # print("line_segments:", line_segments)
-    if line_segments is None or len(line_segments) < 1:
-        return None
-    line_segments = line_segments[:4]
-    line_image = np.zeros_like(frame)
-    for line in line_segments:
-        for x1, y1, x2, y2 in line:
-            cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    line_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
+    print("line segments: ", line_segments)
 
-    return cropped_edges, line_segments, line_image
+    return cropped_edges, line_segments
 
 # Feeding the data to the PID controler and returning a final stear angle for the robot
 def heading(lane_lines, frame, lane_image, prev_h):
-    height, width, _ = frame.shape
+    height, width = frame.shape
     mid_x = 0
     mid_y = 0
     slope = 0
@@ -139,7 +123,7 @@ def heading(lane_lines, frame, lane_image, prev_h):
 
 
 def make_points(frame, line):
-    height, width, _ = frame.shape
+    height, width = frame.shape
     slope, intercept = line
     y1 = height  # bottom of the frame
     y2 = int(y1 * 1/2)  # make points from middle of the frame down
@@ -153,8 +137,8 @@ def focus(edges, mask):
     # only focus bottom half of the screen
     height, width = edges.shape
     polygon = np.array([[
-        (0, height*2/3),
-        (width, height*2/3),
+        (0, height*1/3),
+        (width, height*1/3),
         (width, height),
         (0, height),
     ]], np.int32)
@@ -169,7 +153,7 @@ def focus(edges, mask):
 
 def get_lanes(line_segments, frame):
     lane_lines = []
-    height, width, _ = frame.shape
+    height, width = frame.shape
     left_fit = []
     right_fit = []
     boundary = 1/2
@@ -206,11 +190,14 @@ def get_lanes(line_segments, frame):
     lane_image = cv2.addWeighted(frame, 0.8, lane_image, 1, 1)
     return lane_lines, lane_image
 
-picam2 = Picamera2()
-camera_config = picam2.create_still_configuration(main={"size": (1640, 1232)})
-picam2.configure(camera_config)
-picam2.start()
-time.sleep(2)
-picam2.capture_file("frame.jpg")
-picam2.close()
-print(lane(0))
+def direct():
+    picam2 = Picamera2()
+    camera_config = picam2.create_still_configuration(main={"size": (1640, 1232)})
+    picam2.configure(camera_config)
+    picam2.start()
+    time.sleep(2)
+    picam2.capture_file("frame.jpg")
+    picam2.close()
+    print(lane_det(0, True))
+
+# direct()
