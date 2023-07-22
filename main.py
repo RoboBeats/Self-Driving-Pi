@@ -4,6 +4,7 @@ from lane_follower import lane_det
 # from road_signs import detect
 import time
 import traceback
+import matplotlib.pyplot as plt
 
 def give_heading(speed, turn):
     stdin.write("d")
@@ -28,10 +29,10 @@ time.sleep(2)
 give_heading(75, 0) 
 time.sleep(1)
 print("starting")
+headings = []
 try:
     heading = 0
     speed = 75
-    print("before while loop")
     while 1:
         picam2.capture_file('frame.jpg')
         print("image captured")
@@ -39,8 +40,9 @@ try:
         # if detection >= 1:
         #     if detection > 1:
         #         speed = detection
-        heading = lane_det(heading, False)
+        heading = lane_det(heading)
         prev_h = heading
+        headings.append(heading)
         print("heading", heading)
         give_heading(speed, int(heading))
         # else:
@@ -48,7 +50,8 @@ try:
         #     stdin.write("\n")
         # time.sleep(0.5)
 
-except Exception:
+except:
+    print("headings:", headings)
     stdin.write("s")
     stdin.write("\n")
     client.close()

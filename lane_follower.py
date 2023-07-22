@@ -8,31 +8,45 @@ from picamera2 import Picamera2
 import PID
 
 # Initialise PID
-P = 0.25
-I = 0.07
-D = 0.05
+P = 0.5
+I = 0
+D = 0
 
 pid = PID.PID(P, I, D)
 pid.SetPoint = 0
 pid.setSampleTime(1)
 
-def lane_det(prev_h, is_direct):
+def lane_det(prev_h):
     frame = cv2.imread("frame.jpg", cv2.IMREAD_GRAYSCALE)
+    print("res", frame.shape)
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
     # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     # lower_blue = np.array([0, 100, 40])
     # upper_blue = np.array([175, 300, 175])
     # mask = cv2.inRange(hsv, lower_blue, upper_blue) # filter out wanted colours only (lanes)
-    cropped_edges, line_segments = line_segs(frame, is_direct)
+    cropped_edges, line_segments = line_segs(frame)
     if type(line_segments) != type(np.array([])):
         print("Line_segs: None")
         return prev_h
 
+    line_image = frame
+    for line in line_segments:
+        for x1, y1, x2, y2 in line:
+            cv2.line(line_image, (x1, y1), (x2, y2), (125, 0, 0), 5)
+    if __name__ == "__main__":
+        cv2.imshow("line_image", line_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows
+    
     line_segments = line_segments[:4]
     lane_lines, lane_image = get_lanes(line_segments, frame)
     if type(lane_lines) != type([]):
         print("Lane_lines: None")
         return prev_h
+    if __name__ == "__main__":
+        cv2.imshow("laneimg", lane_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows
 
     angle = heading(lane_lines, frame, lane_image, prev_h)
 
@@ -41,11 +55,11 @@ def lane_det(prev_h, is_direct):
 
     return angle
 
-def line_segs(frame, is_direct):    # Use mask to find and return line segments
+def line_segs(frame):    # Use mask to find and return line segments
     edges = cv2.Canny(frame, 190, 400, L2gradient =True)
     cropped_edges= focus(edges, np.zeros_like(edges))
     """-----------------------------------------------------------------"""
-    if is_direct:
+    if __name__ == "__main__":
         cv2.imshow("frame", frame)
         cv2.imshow("edges", edges)
         cv2.imshow("cropped_edges", cropped_edges)
@@ -55,16 +69,16 @@ def line_segs(frame, is_direct):    # Use mask to find and return line segments
     Parameters for extracting line segments
     """
     rho = 10    # distance precision in pixel, i.e. 1 pixel
-    angle = np.pi/180   # angular precision in radian, i.e. 1 degree
-    min_threshold = 1  # Minimum number of votes
-    minLineLength = 20
-    maxLineGap = 12
+    angle = (np.pi/180) * 4   # angular precision in radian, i.e. 1 degree
+    min_threshold = 2  # Minimum number of votes
+    minLineLength = 150
+    maxLineGap = 60
     """---------------------------------------------------------------------"""
-    line_segments = cv2.HoughLinesP(cropped_edges, rho, angle, min_threshold, 
-        np.array([]), minLineLength=minLineLength, maxLineGap=maxLineGap)
+    line_segments = cv2.HoughLinesP(image=cropped_edges, rho=rho, theta=angle, threshold=min_threshold, 
+        minLineLength=minLineLength, maxLineGap=maxLineGap)
     # print("line_segments:", line_segments)
     print("line segments: ", line_segments)
-
+    
     return cropped_edges, line_segments
 
 # Feeding the data to the PID controler and returning a final stear angle for the robot
@@ -156,9 +170,9 @@ def get_lanes(line_segments, frame):
     height, width = frame.shape
     left_fit = []
     right_fit = []
-    boundary = 1/2
-    left_region_boundary = width * (1 - boundary)
-    right_region_boundary = width * boundary
+    # boundary = 1/2
+    # left_region_boundary = width * (1 - boundary)
+    # right_region_boundary = width * boundary
     for line_segment in line_segments:
         for x1, y1, x2, y2 in line_segment:
             if x1 == x2:
@@ -167,27 +181,25 @@ def get_lanes(line_segments, frame):
             slope = fit[0]
             intercept = fit[1]
             if slope < 0:
-                if x1 < left_region_boundary:
-                    left_fit.append((slope, intercept))
+                left_fit.append((slope, intercept))
             else:
-                if x1 > right_region_boundary:
-                    right_fit.append((slope, intercept))
-
+                right_fit.append((slope, intercept))
     left_fit_average = np.mean(left_fit, axis=0)
+    print("left_fit", left_fit)
+    print("left_fit_average", left_fit_average)
     if len(left_fit) > 0:
         lane_lines.append(make_points(frame, left_fit_average))
 
     right_fit_average = np.mean(right_fit, axis=0)
     if len(right_fit) > 0:
         lane_lines.append(make_points(frame, right_fit_average))
-    if len(lane_lines) not in [1, 2]:
+    if len(lane_lines) == 0:
         return None, None
-    lane_image = np.zeros_like(frame)
-    if lane_lines is not None:
-        for lane in lane_lines:
-            for x1, y1, x2, y2, _ in lane:
-                cv2.line(lane_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    lane_image = cv2.addWeighted(frame, 0.8, lane_image, 1, 1)
+    lane_image = frame
+    for lane in lane_lines:
+        for x1, y1, x2, y2, _ in lane:
+            cv2.line(lane_image, (x1, y1), (x2, y2), (200, 150, 150), 2)
+    print("lane_lines", lane_lines)
     return lane_lines, lane_image
 
 def direct():
@@ -198,6 +210,7 @@ def direct():
     time.sleep(2)
     picam2.capture_file("frame.jpg")
     picam2.close()
-    print(lane_det(0, True))
+    print(lane_det(0))
 
-# direct()
+if __name__ == "__main__":
+    direct()
