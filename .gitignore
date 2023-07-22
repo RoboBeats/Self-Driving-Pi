@@ -2,3 +2,4 @@ data
 __pycache__
 *.jpg
 frame*
+*.txt
