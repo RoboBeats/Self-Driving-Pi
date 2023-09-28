@@ -87,33 +87,46 @@ def heading(lane_lines, frame, lane_image, prev_h):
     mid_y = 0
     slope = 0
 
-    if len(lane_lines) == 1: 
+    if len(lane_lines) == 1:
         x1, y1, x2, y2 = lane_lines[0][0]
         slope = (y2-y1) / (x2-x1)
+        c = y1-(slope*x1)
         mid_y =  height - abs((width/2 * slope))
         if slope < 0:
             mid_x = width
 
         mid_x = width/2
-        mid_y = slope*mid_x
+        mid_y = slope*mid_x + c
         rads = math.atan(slope)
         angle = rads*180/np.pi
+    # else:
+    #     _, _, left_x2, l_y2 = lane_lines[0][0]
+    #     _, _, right_x2, r_y2 = lane_lines[1][0]
+    #     mid_x = (left_x2+right_x2)/2
+    #     mid_y = height/2
+    #     if int(mid_x) == int(width/2):
+    #         angle = 90
+    #     else:
+    #         slope =  (int(mid_y)-int(height)) / (int(mid_x) - int(width/2))
+    #         # print(slope)
+    #         rads = math.atan(slope)
+    #         angle = rads*180/np.pi
     else:
-        _, _, left_x2, l_y2 = lane_lines[0][0]
-        _, _, right_x2, r_y2 = lane_lines[1][0]
-        mid_x = (left_x2+right_x2)/2
-        mid_y = height/2
-        if int(mid_x) == int(width/2):
-            angle = 90
-        else:
-            slope =  (int(mid_y)-int(height)) / (int(mid_x) - int(width/2))
-            # print(slope)
-            rads = math.atan(slope)
-            angle = rads*180/np.pi
-    if angle < 0:
-        angle = -angle - 90
-    else:
-        angle = 90 - angle
+        lx1, ly1, lx2, ly2 = lane_lines[0][0]
+        lslope = (ly2-ly1)/(lx2-lx1)
+        lc = ly1-(lslope*lx1)
+
+        rx1, ry1, rx2, ry2 = lane_lines[1][0]
+        rslope = (ry2-ry1)/(rx2-rx1)
+        rc = ry1-(rslope*rx1)
+
+        com_x = (-rc+c) / (-lsope+rslope)
+        com_y = (lc*rslope - rc*lslope) / (-lslope+rslope)
+
+        com_slope =  (int(com_y)-int(height)) / (int(com_x) - int(width/2))
+        # print(com_slope)
+        rads = math.atan(com_slope)
+        angle = rads*180/np.pi
 
     print("angle: ", angle)
     cv2.line(lane_image, (int(width/2), int(height)), (int(mid_x), int(mid_y)), (100, 255, 255), 10)
