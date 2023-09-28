@@ -90,13 +90,13 @@ def heading(lane_lines, frame, lane_image, prev_h):
     if len(lane_lines) == 1:
         x1, y1, x2, y2 = lane_lines[0][0]
         slope = (y2-y1) / (x2-x1)
-        c = y1-(slope*x1)
-        mid_y =  height - abs((width/2 * slope))
-        if slope < 0:
-            mid_x = width
+        # c = y1-(slope*x1)
+        # mid_y =  height - abs((width/2 * slope))
+        # if slope < 0:
+        #     mid_x = width
 
-        mid_x = width/2
-        mid_y = slope*mid_x + c
+        # mid_x = width/2
+        # mid_y = slope*mid_x + c
         rads = math.atan(slope)
         angle = rads*180/np.pi
     # else:
@@ -127,6 +127,11 @@ def heading(lane_lines, frame, lane_image, prev_h):
         # print(com_slope)
         rads = math.atan(com_slope)
         angle = rads*180/np.pi
+
+    if angle < 0:
+         angle = -angle - 90
+     else:
+         angle = 90 - angle
 
     print("angle: ", angle)
     cv2.line(lane_image, (int(width/2), int(height)), (int(mid_x), int(mid_y)), (100, 255, 255), 10)
