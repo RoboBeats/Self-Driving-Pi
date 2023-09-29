@@ -8,7 +8,7 @@ from picamera2 import Picamera2
 import PID
 
 # Initialise PID
-P = 0.4
+P = 0.6
 I = 0
 D = 0
 
@@ -16,7 +16,7 @@ pid = PID.PID(P, I, D)
 pid.SetPoint = 0
 pid.setSampleTime(1)
 
-def lane_det(prev_h):
+def lane_det(prev_h=0):
     frame = cv2.imread("frame.jpg", cv2.IMREAD_GRAYSCALE)
     print("res", frame.shape)
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
@@ -80,7 +80,7 @@ def line_segs(frame):    # Use mask to find and return line segments
     print("line segments: ", line_segments)
     return cropped_edges, line_segments
 
-# Feeding the data to the PID controler and returning a final stear angle for the robot
+# Calculating errror and inputing it to the PID controler. Returns final angle output.
 def heading(lane_lines, frame, lane_image, prev_h):
     height, width = frame.shape
     mid_x = 0
@@ -120,7 +120,7 @@ def heading(lane_lines, frame, lane_image, prev_h):
         rslope = (ry2-ry1)/(rx2-rx1)
         rc = ry1-(rslope*rx1)
 
-        com_x = (-rc+c) / (-lsope+rslope)
+        com_x = (-rc+lc) / (-lslope+rslope)
         com_y = (lc*rslope - rc*lslope) / (-lslope+rslope)
 
         com_slope =  (int(com_y)-int(height)) / (int(com_x) - int(width/2))
@@ -130,7 +130,7 @@ def heading(lane_lines, frame, lane_image, prev_h):
 
     if angle < 0:
          angle = -angle - 90
-     else:
+    else:
          angle = 90 - angle
 
     print("angle: ", angle)

@@ -26,30 +26,21 @@ camera_config = picam2.create_still_configuration(main={"size": (1640, 1232)})
 picam2.configure(camera_config)
 picam2.start()
 time.sleep(3)
-give_heading(50, 0) 
+give_heading(75, 0) 
 time.sleep(1)
 print("starting")
 headings = []
 try:
     heading = 0
-    speed = 50
+    speed = 75
     while 1:
         picam2.capture_file('frame.jpg')
         print("image captured")
-        # detection = detect()
-        # if detection >= 1:
-        #     if detection > 1:
-        #         speed = detection
-        heading = lane_det(heading)
+        heading = lane_det()
         prev_h = heading
         # headings.append(heading)
         print("heading", heading)
         give_heading(speed, int(heading))
-        # give_heading(75, 0)
-        # else:
-        #     stdin.write("s")
-        #     stdin.write("\n")
-        # time.sleep(0.5)
 
 except:
     print("headings:", headings)
