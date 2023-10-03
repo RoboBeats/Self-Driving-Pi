@@ -6,6 +6,7 @@ import time
 import math
 from picamera2 import Picamera2
 import PID
+import math
 
 # Initialise PID
 P = 0.6
@@ -25,10 +26,11 @@ def lane_det(prev_h=0):
     # upper_blue = np.array([175, 300, 175])
     # mask = cv2.inRange(hsv, lower_blue, upper_blue) # filter out wanted colours only (lanes)
     cropped_edges, line_segments = line_segs(frame)
-    if type(line_segments) != type(np.array([])):
+    if line_segments is None:
         print("Line_segs: None")
         return prev_h
 
+    line_segments = merge_lines(line_segments, 10, 10000)
     line_image = frame
     for line in line_segments:
         for x1, y1, x2, y2 in line:
@@ -38,11 +40,8 @@ def lane_det(prev_h=0):
         cv2.waitKey(0)
         cv2.destroyAllWindows
     
-    line_segments = line_segments[:4]
+    # line_segments = line_segments[:4]
     lane_lines, lane_image = get_lanes(line_segments, frame)
-    if type(lane_lines) != type([]):
-        print("Lane_lines: None")
-        return prev_h
     if __name__ == "__main__":
         cv2.imshow("laneimg", lane_image)
         cv2.waitKey(0)
@@ -76,6 +75,7 @@ def line_segs(frame):    # Use mask to find and return line segments
     """---------------------------------------------------------------------"""
     line_segments = cv2.HoughLinesP(image=cropped_edges, rho=rho, theta=angle, threshold=min_threshold, 
         minLineLength=minLineLength, maxLineGap=maxLineGap)
+    line_segments=merge_lines(line_segments, 3, 50)
     # print("line_segments:", line_segments)
     print("line segments: ", line_segments)
     return cropped_edges, line_segments
@@ -83,13 +83,12 @@ def line_segs(frame):    # Use mask to find and return line segments
 # Calculating errror and inputing it to the PID controler. Returns final angle output.
 def heading(lane_lines, frame, lane_image, prev_h):
     height, width = frame.shape
-    mid_x = 0
-    mid_y = 0
-    slope = 0
+    # mid_x = 0
+    # mid_y = 0
+    # slope = 0
 
     if len(lane_lines) == 1:
-        x1, y1, x2, y2 = lane_lines[0][0]
-        slope = (y2-y1) / (x2-x1)
+        slope = lane_lines[0][4]
         # c = y1-(slope*x1)
         # mid_y =  height - abs((width/2 * slope))
         # if slope < 0:
@@ -112,18 +111,21 @@ def heading(lane_lines, frame, lane_image, prev_h):
     #         rads = math.atan(slope)
     #         angle = rads*180/np.pi
     else:
-        lx1, ly1, lx2, ly2 = lane_lines[0][0]
-        lslope = (ly2-ly1)/(lx2-lx1)
+        lx1, ly1, lx2, ly2, lslope = lane_lines[0]
         lc = ly1-(lslope*lx1)
 
-        rx1, ry1, rx2, ry2 = lane_lines[1][0]
-        rslope = (ry2-ry1)/(rx2-rx1)
+        rx1, ry1, rx2, ry2, rslope = lane_lines[1]
         rc = ry1-(rslope*rx1)
 
-        com_x = (-rc+lc) / (-lslope+rslope)
-        com_y = (lc*rslope - rc*lslope) / (-lslope+rslope)
+        com_x = int((-rc+lc) / (-lslope+rslope))
+        if com_x == 0:
+            print(com_x, type(com_x))
+            com_x = int(0)
+        com_y = int((lc*rslope - rc*lslope) / (-lslope+rslope))
+        if com_y == 0:
+            com_y = int(0)
 
-        com_slope =  (int(com_y)-int(height)) / (int(com_x) - int(width/2))
+        com_slope =  (com_y-int(height)) / (com_x - int(width/2))
         # print(com_slope)
         rads = math.atan(com_slope)
         angle = rads*180/np.pi
@@ -134,7 +136,7 @@ def heading(lane_lines, frame, lane_image, prev_h):
          angle = 90 - angle
 
     print("angle: ", angle)
-    cv2.line(lane_image, (int(width/2), int(height)), (int(mid_x), int(mid_y)), (100, 255, 255), 10)
+    # cv2.line(lane_image, (int(width/2), int(height)), (int(mid_x), int(mid_y)), (100, 255, 255), 10)
     pid.update(angle)
     print("pid.output: " + str(pid.output), "\n")
     return pid.output
@@ -167,12 +169,58 @@ def focus(edges, mask):
     # cv2.destroyAllWindows()
     return cropped_edges
 
+def merge_lines(line_segs, slope_tol, distance_tol):
+    for i in range((len(line_segs)-1)):
+        max_j=len(line_segs)-1
+        for j in range((i+1), len(line_segs)):
+            if j > max_j:
+                break
+            line_1 = line_segs[i][0]
+            line_2 = line_segs[j][0]
+            fit_1 = np.polyfit((line_1[0], line_1[2]), (line_1[1], line_1[3]), 1)
+            slope_1 = fit_1[0]
+            c_1 = fit_1[1]
+            print(f'i: {i}, slope: {slope_1}, c: {c_1}')
+            fit_2 = np.polyfit((line_2[0], line_2[2]), (line_2[1], line_2[3]), 1)
+            slope_2 = fit_2[0]
+            c_2 = fit_2[1]
+            if math.isclose(slope_1, slope_2, rel_tol=slope_tol)and math.isclose(c_1, c_2, rel_tol=slope_tol):
+                np.delete(line_segs, j)
+                max_j -= 1
+    print("lines merged")
+    
+    for line in line_segs:
+        print(line)
+    return line_segs
+
 def get_distance(x):
     x = x[0]
     distance = (x[0]-x[2])**2 + (x[1]-x[3])**2
     return distance
 
 def get_lanes(line_segments, frame):
+    norm_lines = []
+    lane_lines = []
+    for line in line_segments:
+        norm_lines.append(line[0].tolist())
+    print(norm_lines)
+    for line_segment in norm_lines:
+        x1, y1, x2, y2 = line_segment
+        if x1 == x2:
+            continue
+        fit = np.polyfit((x1, x2), (y1, y2), 1)
+        slope = fit[0]
+        line_segment.append(slope)
+    lane_lines.append(max([line for line in norm_lines], key=lambda x:x[4]))
+    lane_lines.append(min([line for line in norm_lines], key=lambda x:x[4]))
+    lane_image = frame
+    for lane in lane_lines:
+        x1, y1, x2, y2, _ = lane
+        cv2.line(lane_image, (x1, y1), (x2, y2), (200, 150, 150), 2)
+    print("lane_lines", lane_lines)
+    return lane_lines, lane_image
+
+def lanes_v2(line_segments, frame):
     left_lines = []
     right_lines = []
     lane_lines = []
@@ -182,6 +230,7 @@ def get_lanes(line_segments, frame):
                 continue
             fit = np.polyfit((x1, x2), (y1, y2), 1)
             slope = fit[0]
+            line_segment.append(slope)
             if slope < 0:
                 left_lines.append(line_segment)
             else:
@@ -193,12 +242,12 @@ def get_lanes(line_segments, frame):
 
     lane_image = frame
     for lane in lane_lines:
-        for x1, y1, x2, y2 in lane:
+        for x1, y1, x2, y2, _ in lane:
             cv2.line(lane_image, (x1, y1), (x2, y2), (200, 150, 150), 2)
     print("lane_lines", lane_lines)
     return lane_lines, lane_image
 
-def old_lanes(line_segments, frame):
+def lanes_v1(line_segments, frame):
     lane_lines = []
     height, width = frame.shape
     left_fit = []
@@ -230,7 +279,7 @@ def old_lanes(line_segments, frame):
         return None, None
     lane_image = frame
     for lane in lane_lines:
-        for x1, y1, x2, y2, _ in lane:
+        for x1, y1, x2, y2, in lane:
             cv2.line(lane_image, (x1, y1), (x2, y2), (200, 150, 150), 2)
     print("lane_lines", lane_lines)
     return lane_lines, lane_image
