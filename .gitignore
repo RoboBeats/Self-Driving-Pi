@@ -3,3 +3,5 @@ __pycache__
 *.jpg
 frame*
 *.txt
+get_pics.py
+test_pics/

@@ -9,9 +9,9 @@ import PID
 import math
 
 # Initialise PID
-P = 0.6
-I = 0
-D = 0
+P = .8
+I = 0.5
+D = 0.2
 
 pid = PID.PID(P, I, D)
 pid.SetPoint = 0
@@ -34,7 +34,7 @@ def lane_det(prev_h=0):
     line_image = frame
     for line in line_segments:
         for x1, y1, x2, y2 in line:
-            cv2.line(line_image, (x1, y1), (x2, y2), (125, 0, 0), 5)
+            cv2.line(line_image, (x1, y1), (x2, y2), (125, 0, 0), 2)
     if __name__ == "__main__":
         cv2.imshow("line_image", line_image)
         cv2.waitKey(0)
@@ -55,8 +55,9 @@ def lane_det(prev_h=0):
     return angle
 
 def line_segs(frame):    # Use mask to find and return line segments
-    edges = cv2.Canny(frame, 190, 400, L2gradient =True)
+    edges = cv2.Canny(frame, 160, 300, L2gradient =True)
     cropped_edges= focus(edges, np.zeros_like(edges))
+    # cropped_edges = edges
     """-----------------------------------------------------------------"""
     if __name__ == "__main__":
         cv2.imshow("frame", frame)
@@ -67,17 +68,17 @@ def line_segs(frame):    # Use mask to find and return line segments
     -----------------------------------------------------------------
     Parameters for extracting line segments
     """
-    rho = 1    # distance precision in pixel, i.e. 1 pixel
-    angle = (np.pi/180) * 1   # angular precision in radian, i.e. 1 degree
+    rho = 2   # distance precision in pixel, i.e. 1 pixel
+    angle = (np.pi/180) * 2   # angular precision in radian, i.e. 1 degree
     min_threshold = 1  # Minimum number of votes
-    minLineLength = 200
-    maxLineGap = 110
+    minLineLength = 100
+    maxLineGap = 70
     """---------------------------------------------------------------------"""
     line_segments = cv2.HoughLinesP(image=cropped_edges, rho=rho, theta=angle, threshold=min_threshold, 
         minLineLength=minLineLength, maxLineGap=maxLineGap)
-    line_segments=merge_lines(line_segments, 3, 50)
+    # line_segments = merge_lines(line_segments, 10000000, 10000000)
     # print("line_segments:", line_segments)
-    print("line segments: ", line_segments)
+    # print("line segments: ", line_segments)
     return cropped_edges, line_segments
 
 # Calculating errror and inputing it to the PID controler. Returns final angle output.
@@ -139,7 +140,7 @@ def heading(lane_lines, frame, lane_image, prev_h):
     # cv2.line(lane_image, (int(width/2), int(height)), (int(mid_x), int(mid_y)), (100, 255, 255), 10)
     pid.update(angle)
     print("pid.output: " + str(pid.output), "\n")
-    return pid.output
+    return round(pid.output, 3)
 
 def make_points(frame, line):
     height, width = frame.shape
@@ -180,15 +181,15 @@ def merge_lines(line_segs, slope_tol, distance_tol):
             fit_1 = np.polyfit((line_1[0], line_1[2]), (line_1[1], line_1[3]), 1)
             slope_1 = fit_1[0]
             c_1 = fit_1[1]
-            print(f'i: {i}, slope: {slope_1}, c: {c_1}')
+            # print(f'i: {i}, slope: {slope_1}, c: {c_1}')
             fit_2 = np.polyfit((line_2[0], line_2[2]), (line_2[1], line_2[3]), 1)
             slope_2 = fit_2[0]
             c_2 = fit_2[1]
-            if math.isclose(slope_1, slope_2, rel_tol=slope_tol)and math.isclose(c_1, c_2, rel_tol=slope_tol):
+            if math.isclose(slope_1, slope_2, rel_tol=slope_tol) and math.isclose(c_1, c_2, rel_tol=slope_tol):
                 np.delete(line_segs, j)
                 max_j -= 1
     print("lines merged")
-    
+
     for line in line_segs:
         print(line)
     return line_segs
@@ -201,23 +202,35 @@ def get_distance(x):
 def get_lanes(line_segments, frame):
     norm_lines = []
     lane_lines = []
+    lane_image = frame
+
     for line in line_segments:
         norm_lines.append(line[0].tolist())
     print(norm_lines)
+    if len(norm_lines) == 1:
+        line = norm_lines[0]
+        x1, y1, x2, y2 = line
+        fit = np.polyfit((x1, x2), (y1, y2), 1)
+        print('fit:', fit)
+        line.append(fit[0])
+        return [line], cv2.line(lane_image, (x1, y1), (x2, y2), (200, 150, 150), 2)
+
     for line_segment in norm_lines:
         x1, y1, x2, y2 = line_segment
         if x1 == x2:
+            line_segment.append(99999)
             continue
         fit = np.polyfit((x1, x2), (y1, y2), 1)
-        slope = fit[0]
-        line_segment.append(slope)
+        print('fit:', fit)
+        line_segment.append(fit[0])
     lane_lines.append(max([line for line in norm_lines], key=lambda x:x[4]))
     lane_lines.append(min([line for line in norm_lines], key=lambda x:x[4]))
-    lane_image = frame
+    if math.isclose(lane_lines[0][4], lane_lines[1][4], rel_tol=1):
+        lane_lines.pop(1)
     for lane in lane_lines:
+        print("lane:", lane)
         x1, y1, x2, y2, _ = lane
         cv2.line(lane_image, (x1, y1), (x2, y2), (200, 150, 150), 2)
-    print("lane_lines", lane_lines)
     return lane_lines, lane_image
 
 def lanes_v2(line_segments, frame):

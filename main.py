@@ -5,6 +5,7 @@ from lane_follower import lane_det
 import time
 import traceback
 import matplotlib.pyplot as plt
+speed = 65
 
 def give_heading(speed, turn):
     stdin.write("d")
@@ -26,24 +27,25 @@ camera_config = picam2.create_still_configuration(main={"size": (1640, 1232)})
 picam2.configure(camera_config)
 picam2.start()
 time.sleep(3)
-give_heading(75, 0) 
+give_heading(speed, 0) 
 time.sleep(1)
 print("starting")
 headings = []
+# time = []
 try:
     heading = 0
-    speed = 75
     while 1:
         picam2.capture_file('frame.jpg')
-        print("image captured")
+        # print("image captured")
         heading = lane_det()
         prev_h = heading
-        # headings.append(heading)
+        headings.append(heading)
+        # time.append(time.time())
         print("heading", heading)
         give_heading(speed, int(heading))
 
 except:
-    print("headings:", headings)
+    print("\nheadings:\n", headings)
     stdin.write("s")
     stdin.write("\n")
     client.close()
