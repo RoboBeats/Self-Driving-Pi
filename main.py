@@ -5,7 +5,6 @@ from heading import get_heading
 import time
 import traceback
 import matplotlib.pyplot as plt
-speed = 60
 
 def give_heading(speed, turn):
     stdin.write("d")
@@ -40,7 +39,7 @@ try:
     while 1:
         picam2.capture_file(f'frame.jpg')
         prev_heading = heading
-        heading = get_heading(prev_heading, img_name=f"frame.jpg")
+        speed, heading = get_heading(prev_heading, img_name=f"frame.jpg")
         i += 1
         headings.append(heading)
         print("\n=======================> heading", heading, "\n")
