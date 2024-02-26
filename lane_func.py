@@ -1,123 +1,131 @@
 import cv2
-import math
 import numpy as np
+import math
 
-# LEN_WEIGHT = 1.3
-# WIDTH_WEIGHT = 1
-MIN_LANE_LENGTH = 500
-MAX_LANE_WIDTH = 100
-VOTE_WIDTH = 50
-MIN_P_TO_A = 0.05
-LANE_COLOR = (200,100,100)
-CURVE_AREA_THRESH = 0.4
-MIN_LANE_GAP = {"max":750, "min": 350}
-# MAX_LANE_GAP = {"max":200, "min": 100}
+"""
+0 means left and 1 means right for lanes.
+Shape of a lane: [x1, y1, x2, y2, x_bot, lane side, angle]
 
-def get_votes(image, cnt, idx, testing):
-    votes = 1
+accross everything, img.shape = [height, width, channels]
+"""
 
-    # cnt_len = cv2.arcLength(cnt, False)
-    rect = cv2.minAreaRect(cnt)
-    height = rect[1][0]
-    width = rect[1][1]
-    if width > height:
-        width, height = height, width
-    perimeter = 2*(width+height)
-    box_area = width*height
-    box = cv2.boxPoints(rect)
-    box = np.int0(box)
-    cv2.drawContours(image,[box],0,(0,0,255),2)
+def delete_top(image):
+    shape = image.shape
+    height = shape[0]
+    CROP_FRACTION = 1/2
+    if len(shape) == 2:
+        resized_image = np.delete(image, slice(int(height*CROP_FRACTION)),0)
+    else:
+        resized_image = np.delete(image, slice(int(height*CROP_FRACTION)),0)
+    print('input image dimension:', image.shape, '  resized image dimensions:', resized_image.shape)
+    return resized_image
 
-    if height < MIN_LANE_LENGTH: votes = 0
-    elif width > MAX_LANE_WIDTH:
-        cnt_area = cv2.contourArea(cnt)
-        ratio = cnt_area/box_area
-        print("ratio: ", ratio)
-        if ratio > CURVE_AREA_THRESH:
-            votes = 0
-    elif width < VOTE_WIDTH: votes += 1
-    # if perimeter/box_area > MIN_P_TO_A: votes += 1
+def get_slope(line):
+    x1, y1, x2, y2 = line[:4]
+    slope = 0
+    if x2==x1:
+        slope = np.inf
+    else: slope = (y2-y1)/(x2-x1)
+    intercept = y1 - slope*x1
+    return slope, intercept
 
-    print("index, votes:  ", idx, votes)
-    print("len, width:  ", height, width)
-    """
-    votes = LEN_WEIGHT*cnt_len+WIDTH_WEIGHT/cnt_width
-    slope, intercept, angle = fit_and_angle(cnt, image, testing)
-    """
-    return votes, height
-
-def fit_and_angle(cnt, image, testing):
-    [vx,vy,x,y] = cv2.fitLine(cnt,cv2.DIST_L2,0,0.01,0.01)
-    print(vx,vy,x,y)
-    lefty = int((-x*vy/vx) + y)
-    righty = int(((image.shape[1]-x)*vy/vx)+y)
-    if testing:
-        cv2.line(image,(image.shape[1]-1,righty),(0,lefty),LANE_COLOR,2)
-        cv2.imshow("fitted line", image)
-        cv2.waitKey()
-
-    slope = (lefty-righty)/(0-(image.shape[1]-1))
+def get_line_ang(line):
+    slope, _ = get_slope(line)
     angle = math.atan(slope) * 180/np.pi
-    # translate angles from topleft to bottom left refernce
     if (angle < 0):
-        angle = -1 * angle
+        angle *= -1
     else:
         angle = 180 - angle
-    print("\n slope,angle", slope, angle,"\n")
+    angle = 90 - angle
+    return -angle
 
-    """
-    c = y - mx
-    intercept = lefty + 0*slope
-    """
-    lane_points = np.array(((image.shape[1]-1,righty),(0,lefty)), dtype=np.int32 )
-    return slope, lefty, angle, lane_points
+def get_top_and_bottom(line, img):
+    height, width, _ = img.shape
+    slope, intercept = get_slope(line[:4])
+    x_top = (0-intercept)/slope
+    x_bot = (height-intercept)/slope
+    return x_top, x_bot
 
-def cnt_is_blocking(leftmost, rightmost, slope, intercept, angle):
-    if angle == 90:
-        lane_x1 = (leftmost[1]-intercept)/slope
-        lane_x2 = (rightmost[1]-intercept)/slope
-        if lane_x1>leftmost[1] and lane_x2<rightmost[1]:
-            return True
-        return False
-    elif angle < 90:
-        cnt_x, cnt_y = rightmost
-        lane_x = (cnt_y-intercept)/slope
-        if cnt_x > lane_x:
-            return True
-    else:
-        cnt_x, cnt_y = leftmost
-        lane_x = (cnt_y-intercept)/slope
-        if cnt_x < lane_x:
-            return True
-    
-    return False
+def pair_lines(lines, img, pair_params, single_lane_params): #takes lines(2+), and finds the best pair to make into lanes.
+    min_top, max_top, min_bot, max_bot = pair_params
+    if len(lines) < 2:
+        return single_lane(lines, single_lane_params, img)
+    pairs = []
+    for idx, line1 in enumerate(lines[:-1]):
+        x_top_1, x_bot_1 = get_top_and_bottom(line1, img)
+        for line2 in lines[idx+1:]:
+            x_top_2, x_bot_2 = get_top_and_bottom(line2, img)
+            # print(f"x_top_1:, {x_top_1}, x_top_2:, {x_top_2}, x_bot_1:, {x_bot_1}, x_bot_2:, {x_bot_2}")
+            top_dist = abs(x_top_1 - x_top_2)
+            bot_dist = abs(x_bot_1 - x_bot_2)
+            # print(f"top and bot distance:  {top_dist}, {bot_dist}")
+            votes = 0
 
-# checks if two given lines can be a lane based on distance
-def check_pair(line1, line2, im_width, im_height):
-    cnt1 = line1[0]
-    cnt2 = line2[0]
-    # print("\n\n", line1[0])
-    # print("\n\nContour: \n", cnt1, "\n___________________________________\n")
+            if min_top < top_dist < max_top:
+                votes += 1
+            if min_bot < bot_dist < max_bot:
+                votes += 1
+            if votes ==2:
+                line1 = list(line1)
+                line2 = list(line2)
+                line1.append(x_bot_1)
+                line2.append(x_bot_2)
+                if x_bot_1 < x_bot_2:
+                    line1.append(0)
+                    line2.append(1)
+                else:
+                    line1.append(1)
+                    line2.append(0)
+                pairs.append([
+                    line1, line2, votes, top_dist, bot_dist, x_bot_1, x_bot_2
+                ])
+    if len(pairs) == 0:
+        return single_lane(lines, single_lane_params, img)
+    # print(pairs, len(pairs))
+    pair = pairs[0]
+    print('-------'*5) 
+    print(f"top and bot distance:  {pair[3]}, {pair[4]}")
+    print('-------'*5)
+    heading = ang_from_pair(pair[0], pair[1], img.shape)
+    print("heading at the end of lane_func: ", heading)
+    return pair[:2], pair[-2:], heading
 
-    s1, i1 = line1[3], line1[4]
-    s2, i2 = line2[3], line2[4]
-    print("s1, s2, i1, i2", s1, s2, i1, i2)
-    if s1 != s2:
-        com_x = (i2 - i1)/(s1 - s2)
-        com_y = com_x * s1 + i1
-        if 0 < com_x < im_width and 0 < com_y < im_height:
-            return 0
+def ang_from_pair(line1, line2, img_shape):
+    # get slope and intercept of both lines
+    m1, b1 = get_slope(line1)
+    m2, b2 = get_slope(line2)
+    #get point (com_x, com_y) where lines meet
+    com_x = (b2-b1)/(m1-m2)
+    com_y = com_x*m1 + b1
+    print("com_x, com_y: ", com_x-(img_shape[1]/2), com_y)
+    return get_line_ang([img_shape[1]/2, img_shape[0], com_x, com_y])
 
-    line1 = [[(im_height-i1)/s1, im_height], [(-i1)/s1, 0]]
-    line2 = [[(im_height-i2)/s2, im_height], [(-i2)/s2, 0]]
-
-    min_distance = np.inf
-    for point1 in line1:
-        for point2 in line2:
-            min_distance = min(min_distance, abs(int(point2[0]-point1[0])))
-    
-    print("\n MIN DISTANCE: ", min_distance, "\n")
-    if  MIN_LANE_GAP["min"] < min_distance < MIN_LANE_GAP["max"]:
-        return 1
-
-    return 0
+def single_lane(lines, single_lane_params, img):
+    lines = lines.tolist()
+    prev_heading, x_tol, heading_disp, prev_left, prev_right, ang_tol = single_lane_params
+    ideal_lanes = []
+    for line in lines:
+        angle = get_line_ang(line)
+        _, x_bot = get_top_and_bottom(line, img)
+        line.append(x_bot)
+        if x_bot < img.shape[0]/2:
+            line.append(0)
+        else: line.append(1)
+        line.append(angle)
+        if (line[5] == 0 and len(prev_left)) or line[5] == 1 and len(prev_right) == 0:
+            continue
+        prev_lane = []
+        if line[6] == 0:
+            prev_lane = prev_left
+        else: prev_lane = prev_right
+        if prev_lane == []:
+            continue
+        ideal_ang = prev_lane[5]+prev_heading
+        if ideal_ang-ang_tol < angle < ideal_ang+ang_tol:
+            ideal_x = prev_lane[4] + (heading_disp * prev_heading)
+            if ideal_x-x_tol < x_bot < ideal_x+x_tol:
+                return [line[0]], [line[-1]]
+            ideal_lanes.append(line)
+    if len(ideal_lanes) == 0:
+        return [lines[0]], [lines[0][-1]], lines[0][-1]
+    return [ideal_lanes[0]], [ideal_lanes[0][-1]], ideal_lanes[0][-1]

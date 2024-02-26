@@ -2,177 +2,101 @@ import cv2
 import sys
 import numpy as np
 import math
-from lane_func import get_votes, fit_and_angle, cnt_is_blocking, check_pair
+from lane_func import *
+from merge_lines import mergeLine
+import os
 
+MAX_MERGE_DIST, MAX_MERGE_ANGLE = 80, 10
+# for a piar of lanes
+MIN_TOP, MAX_TOP = 500, 1300
+MIN_BOT, MAX_BOT = 900, 1850
+# for single lane:
+ANG_TOL = 20
+prev_right = []
+prev_left = []
+DISPLACEMENT_TOL = 50
+HEADING_DISP = 5
 
 MIN_LANE_LENGTH = 500
 MAX_LANE_WIDTH = 50        #Max lane marker width, if more than that some other object
 LANE_COLOR = (200,100,100)
-POLY_CONTOUR_COLOR = (50,50,50)
 NON_LANE_COLOR = (100,100,100)
 MIN_BLOCK_AREA = 75000
 
-def delete_top(image):
-    shape = image.shape
-    height = shape[0]
-    if len(shape) == 2:
-        resized_image = np.delete(image, slice(int(height/3)),0)
-    else:
-        resized_image = np.delete(image, slice(int(height/3)),0)
-    print('input image dimension:', image.shape, '  resized image dimensions:', resized_image.shape)
-    return resized_image
+frame_num = [0]
 
-def get_lanes(im_name, save_dir=""):
+def get_lanes(original_image, img_name, prev_heading, prev_left=prev_left, prev_right=prev_right, show=(__name__=="__main__")):
     # Load image, delete top portion, grayscale, Otsu's threshold
-    original_image = cv2.imread(im_name)
     image = delete_top(original_image)
+    print(image.shape)
 
     #sharpening_kernel =np.array( [[-1, -1, -1],[-1,9,-1], [-1,-1,-1]])
     #sharpened = cv2.filter2D(image, -1, sharpening_kernel)
     #gray = cv2.cvtColor(sharpened, cv2.COLOR_BGR2GRAY)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    if __name__ =='__main__':
+    if show:
         cv2.imshow('original',original_image)
         cv2.imshow('gray_resized', gray)
         cv2.waitKey()
-
+        cv2.destroyAllWindows()
     
     #ret, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     ret, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-    print("ret for thrresh:", ret)
-    if __name__ =='__main__':
+    
+    if show:
         cv2.imshow('thresh', thresh)
         cv2.waitKey()
 
-    # edges = cv2.Canny(gray, 127, 300, L2gradient =True)
-    # if __name__ =='__main__':
-    #     cv2.imshow('Canny', edges)
-    #     cv2.waitKey()
-   
-
-    # Morph open to remove noise, then Morph close to fill in 
-    noise_removal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
-    open = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, noise_removal_kernel)
-
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5,5))
-    close = cv2.morphologyEx(open, cv2.MORPH_CLOSE, close_kernel, iterations=3)
-    if __name__ =='__main__':
-        cv2.imshow('close', close)
-        cv2.waitKey()
-
-    # Find contours
-    cnts = cv2.findContours(close, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    print("contours.len:", len(cnts))
-    #print("-----------Contours[0]------------------")
-    #print(cnts[0])
-    print("-----------Contours[1]------------------")
-    print("cnt1 shape:", cnts[1].shape)
-    print(cnts[1])
-
-    hierarchy = cnts[1]
-    contours = cnts[0]
-
-    #cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-
-    lanes = []
-    print("Num contours:",hierarchy.shape[1])
-
-    #Process each contour to get the bounding box and identity object if possible
-    for idx in range(hierarchy.shape[1]):
-        print("for loop idx",idx)
-        cnt = contours[idx]
-        
-        # print("\n\nContour: \n", cnt, "\n___________________________________\n")
-        
-        # check if lane
-        votes, cnt_len = get_votes(image, cnt, idx, __name__ =='__main__')
-        if votes>0:
-            slope, intercept, angle, lane_points = fit_and_angle(cnt, image, __name__ =='__main__')
-            lanes.append([cnt, votes, cnt_len, slope, intercept, angle, lane_points, idx])
-
-        #print("lanes:", lanes)
-        #sort lanes array by lane length
-
-    lanes = sorted(lanes, key=lambda x: (x[1], x[2]), reverse=True)
-    final_lanes = lanes[:2]
-    """
-    if len(lanes) > 1:
-        pairs = []
-        for i in range(len(lanes)):
-            for j in range(i+1, len(lanes)):
-                is_pair = check_pair(lanes[i], lanes[j], image.shape[1], image.shape[0])
-                pairs.append([i, j, is_pair])
-        pairs = sorted(pairs, key=lambda x: (x[2], lanes[x[0]][1], lanes[x[1]][1], lanes[x[0]][2]), reverse=True)
-        print("_________________\n pairs:", pairs, "\n_________________\n")
-        if pairs[0][2] == 0:
-            final_lanes = [lanes[0]]
-        else:
-            final_lanes = [lanes[pairs[0][0]], lanes[pairs[0][1]]]
-
-    elif len(lanes) == 1:
-        final_lanes = [lanes[0]]
-    else:
-        return [], True
-    """
-
-    print("\n final lanes: ", len(final_lanes))
-    for idx in range(hierarchy.shape[1]):
-        cnt = contours[idx]
-        cnt_rect = cv2.minAreaRect(cnt)
-        area = cnt_rect[1][0]*cnt_rect[1][1]
-        if area < MIN_BLOCK_AREA:
-            continue
-
-        print("cnt area, idx:  ", area, idx)
-        is_lane = False
-        for lane in final_lanes:
-            print("CHECKING FOR LANE")
-            if idx == lane[7]:
-                print("THIS IS A LANE")
-                is_lane = True
-                break
-        if is_lane:
-            continue
-
-        print("Checking for Obstruction")
-        leftmost = tuple(cnt[cnt[:,:,0].argmin()][0])
-        rightmost = tuple(cnt[cnt[:,:,0].argmax()][0])
-        stop = True
-        for lane in final_lanes:
-            _, _, _, slope, intercept, angle, _, _ = lane
-            stop = stop and cnt_is_blocking(leftmost, rightmost, slope, intercept, angle)
-            print("stop in for loop: ", stop)
-        
-        if stop == True:
-            return final_lanes, True
-
-    return final_lanes, False
-
-def display_lanes(image, lanes, im_name, save_dir):
-    #Draw lanes on image and display
-    num_lanes=0
-    for lane in lanes:
-        cv2.drawContours(image, lane[0], -1, LANE_COLOR, 20)
-        # x,y,w,h = lane[2]
-        # print(x,y,w,h)
-        if len(save_dir) != 0:
-            cv2.imwrite(save_dir+im_name, image)
-
-        #cv2.drawContours(image,lane[4], -1, POLY_CONTOUR_COLOR, 10)
-        #cv2.rectangle(image, (x,y), (x+w, y+h), LANE_COLOR, 3)
-        num_lanes+= 1
-        if num_lanes ==2:
-            break
+    raw_hough_img = np.zeros(thresh.shape, dtype=np.uint8)
+    houghLines = cv2.HoughLinesP(thresh, rho=20, theta=.15, threshold=127, minLineLength=250, maxLineGap=10)
+    # print(houghLines)
+    if type(houghLines) == type(None):
+        # cv2.imwrite(f'hough_lines_test/on_close/{img_name}', raw_hough_img)
+        return [], True, 0
     
-    if __name__ =='__main__':
-        cv2.imshow('image_with_lanes', image)    
-        cv2.waitKey()
+    # print("blank shape: ",raw_hough_img.shape)
+    # print("Number of houghLines:", len(houghLines))
+    lines = np.zeros((len(houghLines),4))
+    idx=0
+    for line in houghLines:
+        x1,y1,x2,y2 = line[0]
+        # cv2.line(raw_hough_img, (x1, y1),(x2, y2) , [255, 0, 0],1)
+        lines[idx] = [x1,y1,x2,y2]
+        idx+=1
+    # print(lines)
+    # cv2.imwrite(f'hough_lines_test/on_close/{img_name}', raw_hough_img)
 
-""" 
-    Checks if the input contour is a valid lane, and if so returns lane contours, slope, and intercept.
-    Returns None,None,None otherwise
-"""
+    lines = mergeLine(lines, MAX_MERGE_DIST, MAX_MERGE_ANGLE)
+    # print("----merged lines---------k")
+    # print(lines)
+    for line in lines:
+        x1, y1, x2, y2 = line
+        cv2.line(raw_hough_img, (int(x1), int(y1)),(int(x2), int(y2)) , [255, 0, 0],1)
+    if show:
+        cv2.imshow(f'line idx: {np.where(lines==line)[0][0]}', raw_hough_img)
+        cv2.waitKey()
+    lanes, bot_dist, heading = pair_lines(
+        lines, image, [MIN_TOP, MAX_TOP, MIN_BOT, MAX_BOT],
+        [prev_heading, DISPLACEMENT_TOL, HEADING_DISP, prev_left, prev_right, ANG_TOL]
+    )
+    for lane in lanes:
+        x1, y1, x2, y2 = lane[:4]
+        cv2.line(image, (int(x1), int(y1)),(int(x2), int(y2)) , [0, 255, 200],3)
+    
+    if show:
+        cv2.imshow('Lanes: ', image)
+        cv2.waitKey()
+    prev_left, prev_right = [], []
+    for lane in lanes:
+        # print(lane)
+        if lane[5] == 0: 
+            prev_left = lane
+        else: prev_right = lane
+    # cv2.imwrite(f"frames/{frame_num[0]}.jpg", image)
+    # frame_num[0] = frame_num[0]+1
+    return lanes, False, heading
+
 
 def get_single_lane_old(image, cnt,idx):
     print("Entering contour id", idx)
@@ -286,6 +210,7 @@ def get_single_lane_old(image, cnt,idx):
     if __name__ =='__main__':
         cv2.imshow(f'result_%d'%(idx), result)
         cv2.waitKey()
+        cv2.destroyAllWindows()
 
     # Find resulting contour and draw onto original image
     cnts = cv2.findContours(result, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -296,5 +221,11 @@ def get_single_lane_old(image, cnt,idx):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    _, stop = get_lanes(args[0])
-    print(f'\n\n-------------{stop}-----------------\n')
+    get_lanes(cv2.imread(args[0]), args[0], args[1])
+
+# if __name__ == "__main__":
+#     path = "data_2023/AI_data"
+#     img_names = os.listdir(path)
+#     for name in img_names:
+#         img = cv2.imread(f"{path}/{name}")
+#         get_lanes(img, name)

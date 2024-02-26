@@ -6,8 +6,8 @@ frame*
 get_pics.py
 test_pics/
 detect.tflite
-old_lane_follower.py
 road_signs.py
 temp.py
 visualization_utils.py
 self_pi_data
+*old*
