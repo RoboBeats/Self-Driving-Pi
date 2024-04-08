@@ -1,34 +1,32 @@
 from paramiko import SSHClient, AutoAddPolicy
-from picamera2 import Picamera2
 from heading import get_heading
 import time
 import traceback
 import shutil
 import os
+from imutils.video import VideoStream
+import cv2
 
 def give_heading(speed, turn):
+    print("===============\n\n", int(turn))
     stdin.write("d")
     stdin.write("\n")
-    stdin.write(str(int(speed)))
+    stdin.write(str(int(60)))
     stdin.write("\n")
     stdin.write(str(int(turn)))
     stdin.write("\n")
 
-ip_add = 'ev3dev.local' # ip address of EV3 Brick
+ip_add = '192.168.68.61' # ip address of EV3 Brick
 client = SSHClient()
 client.load_host_keys("/home/pranjal/.ssh/known_hosts") 
 client.load_system_host_keys()
 client.set_missing_host_key_policy(AutoAddPolicy())
 client.connect(ip_add, username='robot', password='maker')
-stdin, stdout, stderr = client.exec_command('brickrun -r -- pybricks-micropython self_driving_pi/main.py')
+stdin, stdout, stderr = client.exec_command(
+    'brickrun -r -- pybricks-micropython self_driving_pi/main.py')
 
-picam2 = Picamera2()
-camera_config = picam2.create_still_configuration(main={"size": (1640, 1232)})
-picam2.configure(camera_config)
-picam2.start()
-time.sleep(2)
-give_heading(70, 0)
-
+webcam=VideoStream(src=0).start()
+webcam.read()
 print("starting")
 headings = []
 try:
@@ -38,9 +36,10 @@ try:
     heading = 0
     i=0
     while 1:
-        picam2.capture_file(f'frames/frame_{i}.jpg')
+        img = webcam.read()
+        cv2.imwrite(f'frames/frame_{i}.jpg', img)
 
-        speed, heading = get_heading(prev_heading, f"frames/frame_{i}.jpg")
+        speed, heading = get_heading(prev_heading, f"frames/frame_{i}.jpg", stdin)
         i += 1
         headings.append(heading)
         print("\n=======================> heading", heading, "\n")
@@ -52,5 +51,4 @@ except:
     stdin.write("s")
     stdin.write("\n")
     client.close()
-    picam2.close()
     traceback.print_exc()
