@@ -9,9 +9,9 @@ def check_overlap(line1, line2):
                             [line1[2], line1[3], line2[0], line2[1]],
                             [line1[2], line1[3], line2[2], line2[3]]])
     distance = np.sqrt((combination[:,0] - combination[:,2])**2 + (combination[:,1] - combination[:,3])**2)
-    print("_______________\n", type(distance), distance, "\n-----------")
+#     print("_______________\n", type(distance), distance, "\n-----------")
     max = np.amax(distance)
-    print(max)
+#     print(max)
     overlap = distance[0] + distance[1] - max 
     endpoint = combination[np.argmax(distance)]
     return (overlap >= 0), endpoint #replace 0 with the value of distance between 2 collinear lines

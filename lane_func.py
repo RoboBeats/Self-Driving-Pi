@@ -9,39 +9,6 @@ Shape of a lane: [x1, y1, x2, y2, x_bot, lane side, angle]
 accross everything, img.shape = [height, width, channels]
 """
 
-def get_intersects(lines, dist_tol):
-    intersects = []
-    for i, line1 in enumerate(lines[:-1]):
-        for j, line2 in enumerate(lines[i+1:]):
-            dist1 = math.dist(line1[:2], line2[:2])
-            if dist1 < dist_tol:
-                x = (line1[0]+line2[0])/2
-                y = (line1[1]+line2[1])/2
-                intersects.append([[x, y], i, i+j+1])
-                break
-            
-            dist2 = math.dist(line1[:2], line2[2:])
-            if dist2 < dist_tol:
-                x = (line1[0]+line2[2])/2
-                y = (line1[1]+line2[3])/2
-                intersects.append([[x, y], i, i+j+1])
-                break
-            
-            dist3 = math.dist(line1[2:], line2[:2])
-            if dist3 < dist_tol:
-                x = (line1[2]+line2[0])/2
-                y = (line1[3]+line2[1])/2
-                intersects.append([[x, y], i, i+j+1])
-                break
-            
-            dist1 = math.dist(line1[2:], line2[2:])
-            if dist1 < dist_tol:
-                x = (line1[2]+line2[2])/2
-                y = (line1[3]+line2[3])/2
-                intersects.append([[x, y], i, j])
-                
-    return intersects
-
 def delete_top(image, crop_fraction = 3/5):
     shape = image.shape
     height = shape[0]
@@ -49,15 +16,12 @@ def delete_top(image, crop_fraction = 3/5):
         resized_image = np.delete(image, slice(int(height*crop_fraction)),0)
     else:
         resized_image = np.delete(image, slice(int(height*crop_fraction)),0)
-    print('input image dimension:', image.shape, '  resized image dimensions:', resized_image.shape)
+#     print('input image dimension:', image.shape, '  resized image dimensions:', resized_image.shape)
     return resized_image
 
 def get_slope(line):
     x1, y1, x2, y2 = line[:4]
-    slope = 0
-    if x2==x1:
-        slope = np.inf
-    else: slope = (y2-y1)/(x2-x1)
+    slope = np.inf if x2==x1 else (y2-y1)/(x2-x1)
     intercept = y1 - slope*x1
     return slope, intercept
 
@@ -70,6 +34,11 @@ def get_line_ang(line):
         angle = 180 - angle
     angle = 90 - angle
     return -angle
+
+def two_line_ang(line1, line2):
+    a1, a2 = get_line_ang(line1), get_line_ang(line2)
+    ang = abs(a1-a2)
+    return ang
 
 def get_top_and_bottom(line, img):
     height, width, _ = img.shape
@@ -89,10 +58,8 @@ def pair_lines(lines, img, pair_params, single_lane_params): #takes lines(2+), a
         x_top_1, x_bot_1 = get_top_and_bottom(line1, img)
         for line2 in lines[idx+1:]:
             x_top_2, x_bot_2 = get_top_and_bottom(line2, img)
-            print(f"x_top_1:, {x_top_1}, x_top_2:, {x_top_2}, x_bot_1:, {x_bot_1}, x_bot_2:, {x_bot_2}")
             top_dist = abs(x_top_1 - x_top_2)
             bot_dist = abs(x_bot_1 - x_bot_2)
-            print(f"top and bot distance:  {top_dist}, {bot_dist}")
             votes = 0
 
             if min_top < top_dist < max_top:
@@ -113,15 +80,10 @@ def pair_lines(lines, img, pair_params, single_lane_params): #takes lines(2+), a
                 pairs.append([
                     line1, line2, votes, top_dist, bot_dist, x_bot_1, x_bot_2
                 ])
-    print(pairs, len(pairs))
     if len(pairs) == 0:
         return single_lane(lines, single_lane_params, img)
     pair = pairs[0]
-    print('-------'*5) 
-    print(f"top and bot distance:  {pair[3]}, {pair[4]}")
-    print('-------'*5)
     heading = ang_from_pair(pair[0], pair[1], img.shape)
-    print("heading at the end of lane_func: ", heading)
     return pair[:2], pair[-2:], heading
 
 def ang_from_pair(line1, line2, img_shape):
@@ -129,13 +91,15 @@ def ang_from_pair(line1, line2, img_shape):
     m1, b1 = get_slope(line1)
     m2, b2 = get_slope(line2)
     #get point (com_x, com_y) where lines meet
+    if m1-m2 == 0:
+        return 0
     com_x = (b2-b1)/(m1-m2)
     com_y = com_x*m1 + b1
-    print("com_x, com_y: ", com_x-(img_shape[1]/2), com_y)
     return get_line_ang([img_shape[1]/2, img_shape[0], com_x, com_y])
 
 def single_lane(lines, single_lane_params, img):
-    lines = lines.tolist()
+    if type(lines) == type(np.array([])):
+        lines = lines.tolist()
     prev_heading, x_tol, heading_disp, prev_left, prev_right, ang_tol = single_lane_params
     ideal_lanes = []
     for line in lines:

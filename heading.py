@@ -7,25 +7,25 @@ import time
 from imutils.video import VideoStream
 
 from junction import junction
+import os
 
 """
 0 means left and 1 means right for lanes.
 Shape of a lane: [x1, y1, x2, y2, x_bot, lane side, angle]
 """
 
-SPEED = 60
+SPEED = 70
 # Initialise PID
 P = 0.25
 I = 0.2
-D = 0
+D = 0.1
 pid = PID.PID(P, I, D) 
 pid.SetPoint = 0
 
 def get_heading(prev_heading, img_name, Ev3):
     img = cv2.imread(img_name)
-#     stop = obj_det(img_name, img, show=(__name__=="__main__"))
+#     stop = obj_det(img_name, img, (__name__=="__main__"), Ev3)
 #     if stop:
-#         time.sleep(0.5)
 #         return 0, 0
     junction(img, Ev3, show=(__name__=="__main__"))
     lanes, stop, angle = get_lanes(img, img_name, prev_heading, show=(__name__=="__main__"))
@@ -52,9 +52,11 @@ def get_heading(prev_heading, img_name, Ev3):
 if __name__=="__main__":
     print("with camera?")
     if input()=="y":
-        webcam=VideoStream(src=0).start()
+        webcam = VideoStream(0).start()
+#         os.system("v4l2-ctl -d /dev/video0 -c auto_exposure=3")
+#         os.system("v4l2-ctl -d /dev/video0 -c exposure_time_absolute=20")
         while True:
-            input()
+            cv2.waitKey()
             img = webcam.read()
             cv2.imwrite("frame.jpg", img)
             speed, heading = get_heading(0, 'frame.jpg', None)
